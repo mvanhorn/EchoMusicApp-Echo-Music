@@ -18,6 +18,10 @@
  *   being pinned to opposite screen edges.
  * - The inline/expanded AnimatedContent is center-aligned so the collapse
  *   animation morphs around the center instead of the start edge.
+ * - ExpandedBar reserves space for the standalone Search button, then
+ *   distributes the remaining bounded width across expanded tab cells so
+ *   they stay visible on narrow screens instead of measuring unbounded
+ *   and clipping inside the pill.
  */
 
 package echo.music.iad1tya.ui.component.floatingtabbar
@@ -76,7 +80,9 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -625,7 +631,9 @@ private fun SharedTransitionScope.ExpandedBar(
           elevations = elevations,
           animatedVisibilityScope = animatedVisibilityScope,
           tabBarContentModifier = tabBarContentModifier,
-          modifier = Modifier
+          // Reserve the standalone Search square and inter-component
+          // spacing first; the remaining bounded width is shared by tabs.
+          modifier = Modifier.weight(1f, fill = false)
         )
       }
 
@@ -695,6 +703,7 @@ private fun SharedTransitionScope.ExpandedTabs(
 
   Row(
     horizontalArrangement = Arrangement.spacedBy(sizes.tabSpacing),
+    verticalAlignment = Alignment.CenterVertically,
     modifier =
       modifier
         .sharedElement(
@@ -707,7 +716,6 @@ private fun SharedTransitionScope.ExpandedTabs(
         .clip(shapes.tabBarShape)
         .then(tabBarContentModifier)
         .padding(sizes.tabBarContentPadding)
-        .wrapContentWidth(align = Alignment.Start, unbounded = true)
         .animateContentSize()
   ) {
     scope.tabs.forEach { tab ->
@@ -743,14 +751,16 @@ private fun SharedTransitionScope.ExpandedTabs(
         },
         isInline = false,
         modifier =
-          Modifier.skipToLookaheadSize()
+          Modifier.weight(1f, fill = false)
+            .fillMaxHeight()
+            .skipToLookaheadSize()
             .clip(shapes.tabShape)
             .clickable(
               onClick = tab.onClick,
               indication = tab.indication?.invoke(),
               interactionSource = remember { MutableInteractionSource() }
             )
-            .padding(sizes.tabExpandedContentPadding)
+            .adaptiveExpandedTabPadding(sizes.tabExpandedContentPadding)
       )
     }
   }
@@ -808,6 +818,60 @@ private fun Tab(
       title()
     }
   }
+}
+
+/**
+ * Applies [default] padding, shrinking the horizontal inset when the incoming width is too tight to
+ * fit [minContentWidth] so expanded-tab icons remain visible on narrow screens.
+ */
+private fun Modifier.adaptiveExpandedTabPadding(
+  default: PaddingValues,
+  minContentWidth: Dp = 24.dp,
+): Modifier = layout { measurable, constraints ->
+  val defaultStart = default.calculateLeftPadding(layoutDirection).roundToPx()
+  val defaultEnd = default.calculateRightPadding(layoutDirection).roundToPx()
+  val defaultTop = default.calculateTopPadding().roundToPx()
+  val defaultBottom = default.calculateBottomPadding().roundToPx()
+  val minContentPx = minContentWidth.roundToPx()
+
+  val (startPad, endPad) =
+    if (
+      !constraints.hasBoundedWidth ||
+        constraints.maxWidth >= minContentPx + defaultStart + defaultEnd
+    ) {
+      defaultStart to defaultEnd
+    } else {
+      val availableForPadding = (constraints.maxWidth - minContentPx).coerceAtLeast(0)
+      val start = availableForPadding / 2
+      start to (availableForPadding - start)
+    }
+
+  val horizontalPad = startPad + endPad
+  val verticalPad = defaultTop + defaultBottom
+  val placeable =
+    measurable.measure(
+      Constraints(
+        minWidth = (constraints.minWidth - horizontalPad).coerceAtLeast(0),
+        maxWidth =
+          if (constraints.hasBoundedWidth) {
+            (constraints.maxWidth - horizontalPad).coerceAtLeast(0)
+          } else {
+            Constraints.Infinity
+          },
+        minHeight = (constraints.minHeight - verticalPad).coerceAtLeast(0),
+        maxHeight =
+          if (constraints.hasBoundedHeight) {
+            (constraints.maxHeight - verticalPad).coerceAtLeast(0)
+          } else {
+            Constraints.Infinity
+          },
+      )
+    )
+
+  val width = (placeable.width + horizontalPad).coerceIn(constraints.minWidth, constraints.maxWidth)
+  val height =
+    (placeable.height + verticalPad).coerceIn(constraints.minHeight, constraints.maxHeight)
+  layout(width, height) { placeable.placeRelative(startPad, defaultTop) }
 }
 
 /**
