@@ -29,21 +29,24 @@ constructor(
   private val networkConnectivity: NetworkConnectivityObserver,
 ) {
 
+  private data class LyricsSearchKey(
+    val mediaId: String,
+    val title: String,
+    val artist: String,
+    val duration: Int,
+    val album: String?,
+  )
+
   private suspend fun resolveLyricsProviders(): List<LyricsProvider> {
     val defaultOrder = LyricsProviderRegistry.getDefaultProviderOrder()
     return defaultOrder.mapNotNull { LyricsProviderRegistry.getProviderByName(it) }
   }
 
-  private val cache = LruCache<String, List<LyricsResult>>(MAX_CACHE_SIZE)
+  private val cache = LruCache<LyricsSearchKey, List<LyricsResult>>(MAX_CACHE_SIZE)
   private var currentLyricsJob: Job? = null
 
   suspend fun getLyrics(mediaMetadata: MediaMetadata): LyricsWithProvider {
     currentLyricsJob?.cancel()
-
-    val cached = cache.get(mediaMetadata.id)?.firstOrNull()
-    if (cached != null) {
-      return LyricsWithProvider(cached.lyrics, cached.providerName)
-    }
 
     val isNetworkAvailable =
       try {
@@ -161,7 +164,14 @@ constructor(
   ) {
     currentLyricsJob?.cancel()
 
-    val cacheKey = "$songArtists-$songTitle".replace(" ", "")
+    val cacheKey =
+      LyricsSearchKey(
+        mediaId = mediaId,
+        title = songTitle,
+        artist = songArtists,
+        duration = duration,
+        album = album,
+      )
     cache.get(cacheKey)?.let { results ->
       results.forEach { callback(it) }
       return

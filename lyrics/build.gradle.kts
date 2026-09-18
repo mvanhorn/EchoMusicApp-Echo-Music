@@ -11,6 +11,12 @@ android {
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
   }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      all { it.jvmArgs("-XX:+EnableDynamicAgentLoading") }
+    }
+  }
 }
 
 kotlin { jvmToolchain(21) }
@@ -31,6 +37,11 @@ dependencies {
   implementation("androidx.core:core-ktx:1.13.1")
   implementation(libs.hilt)
   ksp(libs.hilt.compiler)
+
+  testImplementation(libs.junit)
+  testImplementation("org.robolectric:robolectric:4.14.1")
+  testImplementation("io.mockk:mockk:1.13.13")
+  testImplementation("io.mockk:mockk-agent:1.13.13")
 }
 
 dependencies {
